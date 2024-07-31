@@ -1,61 +1,161 @@
 using System.Collections;
 using UnityEngine;
 
-public class BridgeActivision : MonoBehaviour
+public class BridgeActivation : MonoBehaviour
 {
     public GameObject bridgeObject;
-    public Transform startTransform; // Posisi awal jembatan (tersembunyi)
-    public Transform endTransform; // Posisi akhir jembatan (terlihat)
+    public Transform startTransform; // Initial position of the bridge (hidden)
+    public Transform endTransform; // Final position of the bridge (visible)
+    public float moveSpeed = 3f; // Speed of bridge movement
+    public bool requiresItem; // Determines if the button requires an item to be activated
+    public bool bridgeActivated = false; // Status of the bridge, whether at the final position or not
+    private bool isMoving = false; // Status of bridge movement
+    private PlayerPickupandDrop currentItem; // Reference to the current item
     private Transform player;
-    public float moveSpeed = 3f; // Kecepatan gerakan jembatan
-    private bool bridgeActivated = false; // Status jembatan, apakah di posisi akhir atau tidak
-    private bool isMoving = false; // Status pergerakan jembatan
+    private float distanceToPlayer;
+
+    public BridgeActivation otherBridge; // Reference to the other bridge
+    public QuestManager questManager; // Reference to the QuestManager
 
     void Start()
     {
-        player = GameObject.Find("Ninja").transform;
+        player = GameObject.Find("Ninja")?.transform;
         if (player == null)
         {
             Debug.LogError("Player object not found!");
         }
 
-        if (startTransform == null || endTransform == null)
+        currentItem = FindObjectOfType<PlayerPickupandDrop>();
+        if (currentItem == null)
         {
-            Debug.LogError("Start or End transform is not set!");
+            Debug.LogError("PlayerPickupandDrop script not found!");
         }
 
-        // Set posisi awal jembatan
-        bridgeObject.transform.position = startTransform.position;
+        if (bridgeObject != null && startTransform != null)
+        {
+            bridgeObject.transform.position = startTransform.position;
+        }
+        else
+        {
+            Debug.LogError("BridgeObject or StartTransform is not assigned!");
+        }
+
+        if (questManager == null)
+        {
+            questManager = FindObjectOfType<QuestManager>();
+            if (questManager == null)
+            {
+                Debug.LogError("QuestManager script not found!");
+            }
+        }
     }
 
     void Update()
     {
-        InteractionPlayer();
+        if (requiresItem)
+        {
+            CheckItemCondition();
+        }
+        else
+        {
+            CheckPlayerInteraction();
+        }
     }
 
-    void InteractionPlayer()
+    void CheckItemCondition()
     {
-        float distanceToPlayer = Vector3.Distance(player.position, transform.position);
+        if (player == null || currentItem == null) return;
 
-        if (distanceToPlayer <= 1.5f && !isMoving)
+        distanceToPlayer = Vector3.Distance(player.position, transform.position);
+
+        if (distanceToPlayer <= 2f && currentItem.isItemOnButton && Input.GetKeyDown(KeyCode.E) && !isMoving)
         {
-            if (Input.GetKeyDown(KeyCode.E))
+            ActivateBridge();
+            Debug.Log("Bridge activated with item.");
+
+            if (otherBridge != null && otherBridge.bridgeActivated)
             {
-                if (bridgeActivated)
-                {
-                    StartCoroutine(MoveBridge(endTransform.position, startTransform.position));
-                }
-                else
-                {
-                    StartCoroutine(MoveBridge(startTransform.position, endTransform.position));
-                }
-                bridgeActivated = !bridgeActivated;
+                otherBridge.ResetBridge();
+                Debug.Log("Other bridge reset.");
             }
+        }
+    }
+
+    void CheckPlayerInteraction()
+    {
+        if (player == null) return;
+
+        distanceToPlayer = Vector3.Distance(player.position, transform.position);
+
+        if (distanceToPlayer <= 1.5f && !isMoving && Input.GetKeyDown(KeyCode.E))
+        {
+            ToggleBridge();
+            Debug.Log("Bridge toggled by player interaction.");
+
+            // Reset other bridge if exists
+            if (otherBridge != null && otherBridge.bridgeActivated)
+            {
+                otherBridge.ResetBridge();
+                Debug.Log("Other bridge reset.");
+            }
+        }
+    }
+
+    void ToggleBridge()
+    {
+        if (bridgeObject == null || startTransform == null || endTransform == null) return;
+
+        StartCoroutine(MoveBridge(bridgeActivated ? endTransform.position : startTransform.position,
+                                  bridgeActivated ? startTransform.position : endTransform.position));
+        bridgeActivated = !bridgeActivated;
+        Debug.Log("Bridge toggled. New state: " + (bridgeActivated ? "Activated" : "Deactivated"));
+
+        // Update quest step when bridge is toggled
+        if (questManager != null)
+        {
+            questManager.CompleteObjective();
+        }
+    }
+
+    public void ActivateBridge()
+    {
+        if (bridgeObject == null || startTransform == null || endTransform == null) return;
+
+        if (!bridgeActivated) // Only toggle if not already activated
+        {
+            StartCoroutine(MoveBridge(startTransform.position, endTransform.position));
+            bridgeActivated = true;
+            Debug.Log("Bridge activated.");
+
+            // Update quest step when bridge is activated
+            if (questManager != null)
+            {
+                questManager.CompleteObjective();
+            }
+        }
+
+        // Reset other bridge if exists
+        if (otherBridge != null && otherBridge.bridgeActivated)
+        {
+            otherBridge.ResetBridge();
+            Debug.Log("Other bridge reset.");
+        }
+    }
+
+    public void ResetBridge()
+    {
+        if (!isMoving && bridgeObject != null && startTransform != null)
+        {
+            StartCoroutine(MoveBridge(bridgeObject.transform.position, startTransform.position));
+            bridgeActivated = false;
+            Debug.Log("Bridge reset.");
         }
     }
 
     private IEnumerator MoveBridge(Vector3 startPos, Vector3 endPos)
     {
+        if (bridgeObject == null) yield break;
+
         isMoving = true;
         float journeyLength = Vector3.Distance(startPos, endPos);
         float startTime = Time.time;
@@ -70,5 +170,6 @@ public class BridgeActivision : MonoBehaviour
 
         bridgeObject.transform.position = endPos;
         isMoving = false;
+        Debug.Log("Bridge movement completed.");
     }
 }
